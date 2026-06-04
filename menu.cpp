@@ -102,6 +102,8 @@ enum MENU
 	MENU_UNLOCK2,
 	MENU_UNLOCK3,
 
+	MENU_COVER_BTN_MAP,
+
 	MENU_PROHIB_BTPAIR1,
 	MENU_JOYSYSMAP,
 	MENU_JOYDIGMAP,
@@ -1079,9 +1081,21 @@ void build_advanced_map_summary(advancedButtonMap *abm, char *dest_str, size_t d
 	snprintf(dest_str, dest_size, "%s->%s", input_str, output_str);
 }
 
+void custom_cover_clear(); // DECLARAÇÃO DA NOSSA FUNÇÃO
+void custom_draw_cover_hook(const char* dir_path, const char* file_name); // <-- ADICIONE O ANZOL AQUI
+
 void HandleUI(void)
 {
 	PROFILE_FUNCTION();
+
+	// --- A NOSSA VACINA ANTI-TRAVAMENTO ---
+	// Se saímos do gerenciador de arquivos (e fomos para a raiz ou outro menu),
+	// nós desligamos o fundo COM SEGURANÇA antes do MiSTer desenhar qualquer coisa por cima.
+	if (menustate != MENU_FILE_SELECT1 && menustate != MENU_FILE_SELECT2 && 
+	    menustate != MENU_RECENT1 && menustate != MENU_RECENT2) {
+		custom_cover_clear();
+	}
+	// --------------------------------------
 
 	if (bt_timer >= 0)
 	{
@@ -1210,6 +1224,30 @@ void HandleUI(void)
 
 	int release = 0;
 	if (c & UPSTROKE) release = 1;
+
+	// --- INÍCIO DA LÓGICA DO HIDE MENU ---
+	static uint16_t cover_hide_btn = 0;
+	static bool cover_btn_loaded = false;
+	if (!cover_btn_loaded) {
+		FileLoadConfig("cover_btn.cfg", &cover_hide_btn, 2);
+		cover_btn_loaded = true;
+	}
+
+	static bool cover_view_mode = false;
+	if (cover_view_mode && c && !release) {
+		cover_view_mode = false;
+		OsdMenuCtl(1); // Traz o menu azul de volta
+		c = 0;         // Consome o botão para não dar conflito
+	}
+
+	if (cover_hide_btn && c == cover_hide_btn && !release) {
+		if (menustate == MENU_FILE_SELECT1 || menustate == MENU_FILE_SELECT2) {
+			cover_view_mode = true;
+			OsdMenuCtl(0); // Esconde o menu para ver a arte inteira
+		}
+		c = 0; // Consome o botão
+	}
+	// --- FIM DA LÓGICA ---
 
 	// decode and set events
 	menu = false;
@@ -6687,6 +6725,7 @@ void HandleUI(void)
 		/******************************************************************/
 		/* system menu */
 		/******************************************************************/
+	
 	case MENU_SYSTEM1:
 		if (video_fb_state())
 		{
@@ -6700,7 +6739,7 @@ void HandleUI(void)
 
 		m = 0;
 		OsdSetTitle("System Settings", OSD_ARROW_LEFT);
-		menumask = 0x7F;
+		menumask = 0xFF; 
 
 		OsdWrite(m++);
 		sprintf(s, "       MiSTer v%s", version + 5);
@@ -6751,17 +6790,18 @@ void HandleUI(void)
 		OsdWrite(m++, "");
 		OsdWrite(m++, " Remap keyboard            \x16", menusub == 1);
 		OsdWrite(m++, " Define joystick buttons   \x16", menusub == 2);
-		OsdWrite(m++, " Scripts                   \x16", menusub == 3);
-		OsdWrite(m++, " Help                      \x16", menusub == 4);
+		OsdWrite(m++, " Set 'Hide Menu' Button    \x16", menusub == 3);
+		OsdWrite(m++, " Scripts                   \x16", menusub == 4);
+		OsdWrite(m++, " Help                      \x16", menusub == 5);
 		OsdWrite(m++, "");
 		cr = m;
-		OsdWrite(m++, " Reboot (hold \x16 cold reboot)", menusub == 5);
+		OsdWrite(m++, " Reboot (hold \x16 cold reboot)", menusub == 6);
 		sysinfo_timer = 0;
 
 		reboot_req = 0;
 
 		while(m < OsdGetSize()-1) OsdWrite(m++, "");
-		OsdWrite(15, STD_EXIT, menusub == 6);
+		OsdWrite(15, STD_EXIT, menusub == 7);
 		menustate = MENU_SYSTEM2;
 		break;
 
@@ -6790,6 +6830,10 @@ void HandleUI(void)
 				break;
 
 			case 3:
+				menustate = MENU_COVER_BTN_MAP;
+				break;
+
+			case 4:
 				{
 					uint8_t confirm[32] = {};
 					int match = 0;
@@ -6816,13 +6860,13 @@ void HandleUI(void)
 				}
 				break;
 
-			case 4:
+			case 5:
 				strcpy(Selected_tmp, DOCS_DIR);
 				FileCreatePath(Selected_tmp);
 				SelectFile(Selected_tmp, "PDFTXTMD ", SCANO_DIR | SCANO_TXT, MENU_DOC_FILE_SELECTED, MENU_NONE1);
 				break;
 
-			case 5:
+			case 6:
 				{
 					reboot_req = 1;
 
@@ -6835,7 +6879,7 @@ void HandleUI(void)
 				}
 				break;
 
-			case 6:
+			case 7:
 				menustate = MENU_NONE1;
 				break;
 			}
@@ -6846,6 +6890,29 @@ void HandleUI(void)
 		}
 
 		if (!hold_cnt && reboot_req) fpga_load_rbf("menu.rbf");
+		break;
+
+	case MENU_COVER_BTN_MAP: 
+		OsdSetTitle("Hide Menu Button");
+		OsdWrite(0, "", 0, 0);
+		OsdWrite(1, "   Press the button you", 0, 0);
+		OsdWrite(2, "  want to use to hide the", 0, 0);
+		OsdWrite(3, "  menu and view the cover.", 0, 0);
+		OsdWrite(4, "", 0, 0);
+		OsdWrite(5, "    (Press ESC to cancel)", 0, 0);
+		for (int i = 6; i < OsdGetSize(); i++) OsdWrite(i, "", 0, 0);
+
+		if (c && !release) {
+			if (c == KEY_ESC) {
+				menustate = MENU_SYSTEM1;
+				menusub = 3;
+			} else {
+				cover_hide_btn = c;
+				FileSaveConfig("cover_btn.cfg", &cover_hide_btn, 2);
+				menustate = MENU_SYSTEM1;
+				menusub = 3;
+			}
+		}
 		break;
 
 	case MENU_JOYSYSMAP:
@@ -7866,6 +7933,14 @@ void PrintDirectory(int expand)
 
 		k++;
 	}
+	
+	// --- O NOSSO ANZOL ENTRA AQUI! ---
+	if (flist_nDirEntries() > 0) {
+		custom_draw_cover_hook(selPath, flist_SelectedItem()->de.d_name);
+	} else {
+		custom_draw_cover_hook("", "");
+	}
+	// ---------------------------------
 }
 
 static void set_text(const char *message, unsigned char code)
