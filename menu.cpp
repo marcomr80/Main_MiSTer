@@ -1234,18 +1234,27 @@ void HandleUI(void)
 	}
 
 	static bool cover_view_mode = false;
-	if (cover_view_mode && c && !release) {
-		cover_view_mode = false;
-		OsdMenuCtl(1); // Traz o menu azul de volta
-		c = 0;         // Consome o botão para não dar conflito
+
+	// Lógica de "Interruptor" (Toggle)
+	if (cover_hide_btn && c == cover_hide_btn && !release) {
+		if (cover_view_mode) {
+			// Se o menu estiver escondido, trazemos de volta
+			cover_view_mode = false;
+			OsdMenuCtl(1); 
+		} else if (menustate == MENU_FILE_SELECT1 || menustate == MENU_FILE_SELECT2) {
+			// Se estivermos na lista de jogos, escondemos o menu
+			cover_view_mode = true;
+			OsdMenuCtl(0); 
+		}
+		c = 0; // Consome apenas o botão de Hide, deixando as setas livres!
 	}
 
-	if (cover_hide_btn && c == cover_hide_btn && !release) {
-		if (menustate == MENU_FILE_SELECT1 || menustate == MENU_FILE_SELECT2) {
-			cover_view_mode = true;
-			OsdMenuCtl(0); // Esconde o menu para ver a arte inteira
-		}
-		c = 0; // Consome o botão
+	// Trava de Segurança: Se você iniciar um jogo, apertar F12 (Menu do Core), 
+	// ou sair da lista de ROMs de qualquer outra forma, o sistema garante
+	// que o menu azul volta a aparecer para você não navegar às cegas.
+	if (cover_view_mode && menustate != MENU_FILE_SELECT1 && menustate != MENU_FILE_SELECT2) {
+		cover_view_mode = false;
+		OsdMenuCtl(1);
 	}
 	// --- FIM DA LÓGICA ---
 
